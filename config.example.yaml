@@ -1,0 +1,128 @@
+version: "0.2"
+
+# ILLUSTRATIVE VALUES ONLY. These are not any real firm's criteria.
+# Setup: cp config.example.yaml config.yaml, then edit config.yaml (git-ignored).
+#
+# Scoring rules:
+# - Points require evidence. UNKNOWN earns 0 points and lowers confidence; it is never treated as FALSE.
+# - A nested mapping under a signal is a "one-of" group: only the best matching option scores.
+# - Dimension max_points are the weights and must sum to 100.
+
+firm:
+  services: [strategy, marketing, operations, recruiting]
+
+hard_exclusions:
+  # Exclusions fire only on KNOWN values. UNKNOWN never excludes.
+  sector_gate:
+    pass_if_any_true: [is_tech_or_tech_adjacent, sells_to_businesses]
+  stages_excluded: [series_b, series_c_plus]
+  hq_country_required: US
+  statuses_excluded: [acquired, existing_client, shut_down]
+
+recorded_not_scored:
+  - revenue_status
+
+icp_fit:
+  max_points: 35
+  sector:
+    max_points: 6
+    preferred: {values: [saas, developer_tools], points: 6}
+    acceptable: {values: [fintech, healthtech], points: 4}
+  stage:
+    max_points: 6
+    preferred: {values: [seed], points: 6}
+    acceptable: {values: [pre_seed, series_a], points: 3}
+  total_funding_usd:
+    max_points: 5
+    zero_below: 250000
+    ramp_to_full_at: 1000000
+    full_until: 5000000
+    points_above_full: 2
+  company_age_months:
+    max_points: 3
+    full_between: [6, 48]
+  employees:
+    max_points: 3
+    full_between: [5, 25]
+    partial: {between: [26, 50], points: 1}
+  business_model:
+    max_points: 3
+    preferred: {values: [b2b_saas], points: 3}
+  target_customers:
+    max_points: 4
+    businesses: {values: [mid_market, enterprise], points: 4}
+    consumers: {values: [consumer], points: 1}
+  firm_expertise:
+    max_points: 5
+    primary: {values: [analytics], points: 5}
+    adjacent: {values: [devops_tooling], points: 3}
+
+service_need:
+  max_points: 35
+  per_service_cap: 15
+  report_primary_service: true
+  signals:
+    strategy:
+      stated_intent_to_raise: 5
+      entering_new_market: 5
+    marketing:
+      launched_but_no_customer_logos: 4
+      demo_or_waitlist_without_pricing: 3
+      hiring_first_sales_or_growth_role: 4
+    operations:
+      multiple_support_channels: 3
+      no_help_center_or_docs: 3
+      hiring_support_or_success_role: 4
+      existing_ai_support_agent: -3
+    recruiting:
+      open_roles:
+        three_or_more: 5
+        one_or_two: 3
+      hiring_technical_leadership: 4
+
+urgency:
+  max_points: 20
+  signals:
+    funding_timing:
+      max_points: 8
+      deployment_window:
+        full_within_days: 60
+        zero_after_days: 240
+      next_raise_window:
+        ramp_from_months: 6
+        full_between_months: [12, 18]
+        zero_after_months: 24
+    recent_product_launch:
+      max_points: 5
+      full_within_days: 45
+      zero_after_days: 120
+    new_job_posting:
+      max_points: 4
+      full_within_days: 30
+      zero_after_days: 60
+    accelerator_demo_day:
+      max_points: 3
+      full_within_days: 60
+      zero_after_days: 120
+
+semantic_fit:
+  max_points: 10
+  method: distinct_themes
+  positive_themes:
+    analytics:  {points: 2, terms: [analytics, dashboards, reporting]}
+    saas_api:   {points: 2, terms: [saas, api, platform, integrations]}
+    b2b:        {points: 2, terms: [b2b, for teams, enterprise]}
+    automation: {points: 2, terms: [automation, workflow]}
+    data:       {points: 2, terms: [data, data pipeline, warehouse]}
+  negative_themes:
+    agency: {points: -2, terms: [agency, consulting firm]}
+
+confidence:
+  reported_separately: true
+  source_reliability:
+    official_site: 0.9
+    yc_directory: 0.9
+    user_csv: 0.8
+    press: 0.8
+    llm_extracted: 0.7
+    inferred: 0.5

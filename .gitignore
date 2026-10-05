@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+*.egg-info/
+dist/
+build/
+
+# Secrets
+.env
+.env.*
+!.env.example
+
+# Firm-specific scoring config (copy config.example.yaml to create it)
+config.yaml
+
+# Local data, caches, and outputs (may contain firm-sensitive info)
+data/
+output/
+*.sqlite
+*.sqlite3
+*.db
+
+# OS and editor
+.DS_Store
+.vscode/
