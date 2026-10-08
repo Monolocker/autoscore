@@ -10,7 +10,7 @@ PAGE_TYPE_KEYWORDS: dict[str, tuple[str, ...]] = {
     "pricing": ("pricing", "plans"),
     "customers": ("customers", "case-studies", "testimonials"),
     "about": ("about", "company", "team"),
-    "product": ("product", "features", "platform", "how-it-works"),
+    "product": ("product", "features", "platform", "how-it-works", "api", "developers"),
     "blog": ("blog", "news", "changelog", "updates"),
     "solutions": ("solutions", "use-cases"),
 }

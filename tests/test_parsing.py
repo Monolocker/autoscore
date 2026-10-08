@@ -39,6 +39,12 @@ def test_text_excludes_scripts_and_styles_and_collapses_whitespace() -> None:
     assert page.text.count("Built for B2B sales teams.") == 1
 
 
+def test_inline_elements_stay_on_one_line() -> None:
+    html = "<html><body><h1>Introducing the <span>Clodo</span> API</h1><p>Find people, <em>fast</em>.</p></body></html>"
+    page = parse_html(html, "https://exampleai.com")
+    assert page.text.splitlines() == ["Introducing the Clodo API", "Find people, fast."]
+
+
 def test_links_are_absolute_deduplicated_and_filtered() -> None:
     page = parse_html(PAGE_HTML, "https://exampleai.com")
     assert [link.url for link in page.links] == [

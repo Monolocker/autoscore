@@ -12,6 +12,7 @@ from autoscore.parsing import Link
         ("https://exampleai.com/careers/engineer", "careers"),
         ("https://jobs.ashbyhq.com/exampleai", "careers"),
         ("https://blog.exampleai.com", "blog"),
+        ("https://exampleai.com/api-info", "product"),
         ("https://exampleai.com/join-waitlist", "other"),
         ("https://twitter.com/exampleai", None),
     ],

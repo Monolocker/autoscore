@@ -13,7 +13,7 @@ from autoscore.database import get_page, list_companies, list_html_pages, save_p
 from autoscore.discovery import MAX_SUBPAGES, select_subpages, site_host
 from autoscore.fetcher import Fetcher
 from autoscore.models import utc_now
-from autoscore.parsing import looks_js_rendered, parse_html
+from autoscore.parsing import PARSER_VERSION, looks_js_rendered, parse_html
 
 logger = logging.getLogger(__name__)
 
@@ -91,16 +91,17 @@ def fetch_company_pages(
 
 
 def parse_pages(connection: sqlite3.Connection) -> ParseSummary:
-    """Parse every stored page whose HTML changed since it was last parsed."""
+    """Parse every stored page whose HTML or parser version changed since its last parse."""
     summary = ParseSummary()
     for page in list_html_pages(connection):
-        if page["source_hash"] == page["content_hash"]:
+        # The key combines parser version and HTML hash: new HTML or a better parser
+        # both trigger a re-parse, while identical work is skipped.
+        parse_key = f"v{PARSER_VERSION}:{page['content_hash']}"
+        if page["source_hash"] == parse_key:
             summary.unchanged += 1
             continue
         parsed = parse_html(page["html"], page["final_url"] or page["url"])
-        save_page_text(
-            connection, page["id"], parsed.title, parsed.description, parsed.text, page["content_hash"]
-        )
+        save_page_text(connection, page["id"], parsed.title, parsed.description, parsed.text, parse_key)
         summary.parsed += 1
         if looks_js_rendered(page["html"], parsed.text):
             summary.likely_js_rendered.append(page["url"])

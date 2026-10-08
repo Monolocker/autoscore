@@ -1,4 +1,4 @@
-"""Turn raw HTML into clean text and links. Pure functions, no network or database"""
+"""Turn raw HTML into clean text and links. Pure functions: no network, no database."""
 
 import re
 from dataclasses import dataclass, field
@@ -8,36 +8,51 @@ from bs4 import BeautifulSoup, Tag
 
 from autoscore.urls import normalize_website
 
+# Bump this whenever text extraction changes, so stored pages are re-parsed.
+PARSER_VERSION = 2
+
 NON_CONTENT_TAGS = ["script", "style", "noscript", "svg", "template", "iframe"]
+# Elements that start a new line. Everything else (span, em, a, strong...) is inline text.
+BLOCK_TAGS = [
+    "address", "article", "aside", "blockquote", "br", "button", "dd", "div", "dl", "dt",
+    "figcaption", "footer", "form", "h1", "h2", "h3", "h4", "h5", "h6", "header", "hr",
+    "li", "main", "nav", "ol", "p", "pre", "section", "table", "td", "th", "tr", "ul",
+]
 SKIPPED_PREFIXES = ("#", "mailto:", "tel:", "javascript:")
 
+
 @dataclass
-class Link: 
+class Link:
     url: str
     text: str
 
-@dataclass 
+
+@dataclass
 class ParsedPage:
     title: str | None
     description: str | None
     text: str
     links: list[Link] = field(default_factory=list)
 
-def clean_url(url: str) -> str | None: 
-    """Normalize an absolute link the same way company websites are normalized"""
+
+def clean_url(url: str) -> str | None:
+    """Normalize an absolute link the same way company websites are normalized."""
     try:
         return normalize_website(url)
     except ValueError:
-        return None 
-    
+        return None
+
+
 def clean_text(raw: str) -> str:
-    """Collapse whitespace, drop empty lines, and drop immediately repeated lines"""
+    """Collapse whitespace, tidy punctuation, drop empty and immediately repeated lines."""
     lines: list[str] = []
     for line in raw.splitlines():
         line = re.sub(r"\s+", " ", line).strip()
+        line = re.sub(r" ([.,!?;:])", r"\1", line)  # "fast ." -> "fast."
         if line and (not lines or lines[-1] != line):
             lines.append(line)
     return "\n".join(lines)
+
 
 def meta_content(soup: BeautifulSoup, **attrs: str) -> str | None:
     tag = soup.find("meta", attrs=attrs)
@@ -66,6 +81,14 @@ def extract_links(soup: BeautifulSoup, base_url: str) -> list[Link]:
     return links
 
 
+def extract_text(container: BeautifulSoup | Tag) -> str:
+    """Visible text with one line per block element; inline elements stay on the same line."""
+    for tag in container.find_all(BLOCK_TAGS):
+        tag.insert_before("\n")
+        tag.insert_after("\n")
+    return clean_text(container.get_text(separator=" "))
+
+
 def parse_html(html: str, base_url: str) -> ParsedPage:
     soup = BeautifulSoup(html, "html.parser")
     title = soup.title.get_text(strip=True) if soup.title else None
@@ -74,8 +97,7 @@ def parse_html(html: str, base_url: str) -> ParsedPage:
 
     for tag in soup.find_all(NON_CONTENT_TAGS):
         tag.decompose()
-    body = soup.body or soup
-    text = clean_text(body.get_text(separator="\n"))
+    text = extract_text(soup.body or soup)
     return ParsedPage(title=title or None, description=description, text=text, links=links)
 
 

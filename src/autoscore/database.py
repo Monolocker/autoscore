@@ -54,7 +54,7 @@ CREATE TABLE IF NOT EXISTS page_texts (
     title        TEXT,
     description  TEXT,
     text         TEXT NOT NULL,
-    source_hash  TEXT NOT NULL,   -- content_hash of the HTML this text was parsed from
+    source_hash  TEXT NOT NULL,   -- parse key: parser version + content_hash of the HTML parsed
     parsed_at    TEXT NOT NULL
 );
 """
