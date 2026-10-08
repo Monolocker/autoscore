@@ -1,8 +1,11 @@
-"""SQLite persistence using the standard library: plain SQL, no ORM"""
+"""SQLite persistence using the standard library: plain SQL, no ORM."""
 
+import hashlib
 import sqlite3
 from pathlib import Path
+
 from autoscore.config import PROJECT_ROOT
+from autoscore.fetcher import FetchResult
 from autoscore.models import Company, Signal, utc_now
 
 DEFAULT_DB_PATH = PROJECT_ROOT / "data" / "autoscore.sqlite"
@@ -18,22 +21,37 @@ CREATE TABLE IF NOT EXISTS companies (
 );
 
 CREATE TABLE IF NOT EXISTS signals (
-    id          INTEGER PRIMARY KEY,
-    company_key TEXT NOT NULL REFERENCES companies (key) on DELETE CASCADE,
-    name        TEXT NOT NULL,
-    value       TEXT NOT NULL CHECK (value IN ('true', 'false', 'unknown')),
-    evidence    TEXT,
-    source_type TEXT,
-    method      TEXT,
-    source_url  TEXT,
-    confidence  REAL,
-    observed_at TEXT,
-    event_date  TEXT,
+    id           INTEGER PRIMARY KEY,
+    company_key  TEXT NOT NULL REFERENCES companies (key) ON DELETE CASCADE,
+    name         TEXT NOT NULL,
+    value        TEXT NOT NULL CHECK (value IN ('true', 'false', 'unknown')),
+    evidence     TEXT,
+    source_type  TEXT,
+    method       TEXT,
+    source_url   TEXT,
+    confidence   REAL,
+    observed_at  TEXT,
+    event_date   TEXT,
     UNIQUE (company_key, name)
+);
+
+CREATE TABLE IF NOT EXISTS pages (
+    id            INTEGER PRIMARY KEY,
+    company_key   TEXT NOT NULL REFERENCES companies (key) ON DELETE CASCADE,
+    url           TEXT NOT NULL,
+    final_url     TEXT,
+    status_code   INTEGER,
+    content_type  TEXT,
+    content_hash  TEXT,           -- sha256 of the HTML; lets later stages skip unchanged pages
+    html          TEXT,
+    error         TEXT,
+    fetched_at    TEXT NOT NULL,
+    UNIQUE (company_key, url)
 );
 """
 
 PROVENANCE_COLUMNS = ("source_type", "method", "source_url", "confidence", "observed_at")
+
 
 def connect(db_path: Path = DEFAULT_DB_PATH) -> sqlite3.Connection:
     """Open the database, enable foreign keys, and create tables if missing."""
@@ -133,3 +151,47 @@ def _row_to_signal(row: sqlite3.Row) -> Signal:
     provenance = {column: data.pop(column) for column in PROVENANCE_COLUMNS}
     data["provenance"] = provenance if provenance["source_type"] is not None else None
     return Signal.model_validate(data)
+
+
+def save_page(connection: sqlite3.Connection, company_key: str, result: FetchResult) -> None:
+    """Insert a fetched page, or replace the previous fetch of the same URL."""
+    content_hash = None
+    if result.html is not None:
+        content_hash = hashlib.sha256(result.html.encode("utf-8")).hexdigest()
+    with connection:
+        connection.execute(
+            """
+            INSERT INTO pages (
+                company_key, url, final_url, status_code, content_type,
+                content_hash, html, error, fetched_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT (company_key, url) DO UPDATE SET
+                final_url = excluded.final_url,
+                status_code = excluded.status_code,
+                content_type = excluded.content_type,
+                content_hash = excluded.content_hash,
+                html = excluded.html,
+                error = excluded.error,
+                fetched_at = excluded.fetched_at
+            """,
+            (
+                company_key,
+                result.url,
+                result.final_url,
+                result.status_code,
+                result.content_type,
+                content_hash,
+                result.html,
+                result.error,
+                utc_now().isoformat(),
+            ),
+        )
+
+
+def get_page_record(connection: sqlite3.Connection, company_key: str, url: str) -> sqlite3.Row | None:
+    """Return fetch metadata for a page (used for cache checks), or None if never fetched."""
+    return connection.execute(
+        "SELECT fetched_at, error, content_hash FROM pages WHERE company_key = ? AND url = ?",
+        (company_key, url),
+    ).fetchone()

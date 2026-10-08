@@ -1,10 +1,9 @@
 import sqlite3
-from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
 
-from autoscore.database import connect, get_company, list_companies
+from autoscore.database import get_company, list_companies
 from autoscore.ingestion import import_csv, parse_usd, to_snake
 from autoscore.models import SourceType, Stage
 
@@ -15,13 +14,6 @@ Blank Facts Co,blankfacts.com,,,,,,,
 Bad Stage Co,badstage.com,Series Z,,,,,,
 ,noname.com,seed,,,,,,
 """
-
-
-@pytest.fixture
-def connection(tmp_path: Path) -> Iterator[sqlite3.Connection]:
-    db = connect(tmp_path / "test.sqlite")
-    yield db
-    db.close()
 
 
 @pytest.fixture

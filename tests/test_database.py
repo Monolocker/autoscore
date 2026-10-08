@@ -1,12 +1,9 @@
 import sqlite3
-from collections.abc import Iterator
 from datetime import date
-from pathlib import Path
 
 import pytest
 
 from autoscore.database import (
-    connect,
     get_company,
     get_signals,
     list_companies,
@@ -24,14 +21,6 @@ from autoscore.models import (
     Stage,
     Tristate,
 )
-
-
-@pytest.fixture
-def connection(tmp_path: Path) -> Iterator[sqlite3.Connection]:
-    """A fresh database file per test, in a temp folder pytest cleans up."""
-    db = connect(tmp_path / "test.sqlite")
-    yield db
-    db.close()
 
 
 def site_provenance() -> Provenance:
@@ -52,7 +41,7 @@ def example_company() -> Company:
 
 
 def test_schema_creates_tables(connection: sqlite3.Connection) -> None:
-    assert list_tables(connection) == ["companies", "signals"]
+    assert list_tables(connection) == ["companies", "pages", "signals"]
 
 
 def test_company_round_trip(connection: sqlite3.Connection) -> None:
