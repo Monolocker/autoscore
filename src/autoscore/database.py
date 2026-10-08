@@ -48,6 +48,15 @@ CREATE TABLE IF NOT EXISTS pages (
     fetched_at    TEXT NOT NULL,
     UNIQUE (company_key, url)
 );
+
+CREATE TABLE IF NOT EXISTS page_texts (
+    page_id      INTEGER PRIMARY KEY REFERENCES pages (id) ON DELETE CASCADE,
+    title        TEXT,
+    description  TEXT,
+    text         TEXT NOT NULL,
+    source_hash  TEXT NOT NULL,   -- content_hash of the HTML this text was parsed from
+    parsed_at    TEXT NOT NULL
+);
 """
 
 PROVENANCE_COLUMNS = ("source_type", "method", "source_url", "confidence", "observed_at")
@@ -189,9 +198,47 @@ def save_page(connection: sqlite3.Connection, company_key: str, result: FetchRes
         )
 
 
-def get_page_record(connection: sqlite3.Connection, company_key: str, url: str) -> sqlite3.Row | None:
-    """Return fetch metadata for a page (used for cache checks), or None if never fetched."""
+def get_page(connection: sqlite3.Connection, company_key: str, url: str) -> sqlite3.Row | None:
+    """Return the stored fetch of a page (metadata and HTML), or None if never fetched."""
     return connection.execute(
-        "SELECT fetched_at, error, content_hash FROM pages WHERE company_key = ? AND url = ?",
-        (company_key, url),
+        "SELECT * FROM pages WHERE company_key = ? AND url = ?", (company_key, url)
     ).fetchone()
+
+
+def list_html_pages(connection: sqlite3.Connection) -> list[sqlite3.Row]:
+    """Pages that have HTML, with the hash they were last parsed from (NULL if never parsed)."""
+    return connection.execute(
+        """
+        SELECT pages.id, pages.company_key, pages.url, pages.final_url, pages.html,
+               pages.content_hash, page_texts.source_hash
+        FROM pages
+        LEFT JOIN page_texts ON page_texts.page_id = pages.id
+        WHERE pages.html IS NOT NULL
+        ORDER BY pages.company_key, pages.url
+        """
+    ).fetchall()
+
+
+def save_page_text(
+    connection: sqlite3.Connection,
+    page_id: int,
+    title: str | None,
+    description: str | None,
+    text: str,
+    source_hash: str,
+) -> None:
+    """Store parsed text for a page, replacing any earlier parse."""
+    with connection:
+        connection.execute(
+            """
+            INSERT INTO page_texts (page_id, title, description, text, source_hash, parsed_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+            ON CONFLICT (page_id) DO UPDATE SET
+                title = excluded.title,
+                description = excluded.description,
+                text = excluded.text,
+                source_hash = excluded.source_hash,
+                parsed_at = excluded.parsed_at
+            """,
+            (page_id, title, description, text, source_hash, utc_now().isoformat()),
+        )

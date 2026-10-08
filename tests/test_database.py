@@ -41,7 +41,7 @@ def example_company() -> Company:
 
 
 def test_schema_creates_tables(connection: sqlite3.Connection) -> None:
-    assert list_tables(connection) == ["companies", "pages", "signals"]
+    assert list_tables(connection) == ["companies", "page_texts", "pages", "signals"]
 
 
 def test_company_round_trip(connection: sqlite3.Connection) -> None:

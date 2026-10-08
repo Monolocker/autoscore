@@ -8,7 +8,7 @@ from pathlib import Path
 
 from autoscore.config import CONFIG_PATH, PROJECT_ROOT, load_config, total_weight
 from autoscore.database import DEFAULT_DB_PATH, connect, list_companies, list_tables
-from autoscore.enrichment import fetch_homepages
+from autoscore.enrichment import fetch_company_pages, parse_pages
 from autoscore.fetcher import Fetcher
 from autoscore.ingestion import import_csv
 
@@ -49,11 +49,24 @@ def run_import(csv_path: Path) -> int:
 
 def run_fetch(refresh: bool) -> int:
     with closing(connect()) as connection, Fetcher() as fetcher:
-        summary = fetch_homepages(connection, fetcher, refresh=refresh)
+        summary = fetch_company_pages(connection, fetcher, refresh=refresh)
 
-    print(f"Fetched {summary.fetched}, cached {summary.cached}, no website {summary.no_website}")
-    for company_key, error in summary.failed:
-        print(f"Failed {company_key}: {error}")
+    print(
+        f"Fetched {summary.fetched} pages, cached {summary.cached}, "
+        f"companies without website {summary.no_website}"
+    )
+    for url, error in summary.failed:
+        print(f"Failed {url}: {error}")
+    return 0
+
+
+def run_parse() -> int:
+    with closing(connect()) as connection:
+        summary = parse_pages(connection)
+
+    print(f"Parsed {summary.parsed} pages, unchanged {summary.unchanged}")
+    for url in summary.likely_js_rendered:
+        print(f"Possibly JavaScript-rendered (very little visible text): {url}")
     return 0
 
 
@@ -67,14 +80,17 @@ def main() -> None:
     subcommands.add_parser("status", help="show config and database status")
     import_parser = subcommands.add_parser("import", help="import seed companies from a CSV file")
     import_parser.add_argument("csv_path", type=Path, help="path to the CSV file")
-    fetch_parser = subcommands.add_parser("fetch", help="fetch company homepages (cached)")
+    fetch_parser = subcommands.add_parser("fetch", help="fetch homepages and relevant subpages (cached)")
     fetch_parser.add_argument("--refresh", action="store_true", help="ignore the cache and fetch again")
+    subcommands.add_parser("parse", help="extract text from fetched pages that changed")
     args = parser.parse_args()
 
     if args.command == "status":
         exit_code = show_status()
     elif args.command == "import":
         exit_code = run_import(args.csv_path)
-    else:
+    elif args.command == "fetch":
         exit_code = run_fetch(args.refresh)
+    else:
+        exit_code = run_parse()
     sys.exit(exit_code)
