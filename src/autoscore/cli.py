@@ -10,6 +10,7 @@ from autoscore.config import CONFIG_PATH, PROJECT_ROOT, load_config, total_weigh
 from autoscore.database import DEFAULT_DB_PATH, connect, list_companies, list_tables
 from autoscore.enrichment import fetch_company_pages, parse_pages
 from autoscore.fetcher import Fetcher
+from autoscore.filters import check_exclusions
 from autoscore.ingestion import import_csv
 
 
@@ -47,13 +48,30 @@ def run_import(csv_path: Path) -> int:
     return 0
 
 
+def run_filter() -> int:
+    config = load_config()
+    with closing(connect()) as connection:
+        companies = list_companies(connection)
+
+    for company in companies:
+        result = check_exclusions(company, config)
+        label = "EXCLUDED" if result.excluded else "PASS"
+        detail = "; ".join(result.reasons)
+        if result.unknown_checks:
+            detail = f"{detail}  (unknown: {', '.join(result.unknown_checks)})".strip()
+        # :<9 and :<28 pad the columns so the output lines up.
+        print(f"{label:<9} {company.key:<28} {detail}")
+    return 0
+
+
 def run_fetch(refresh: bool) -> int:
+    config = load_config()
     with closing(connect()) as connection, Fetcher() as fetcher:
-        summary = fetch_company_pages(connection, fetcher, refresh=refresh)
+        summary = fetch_company_pages(connection, fetcher, refresh=refresh, config=config)
 
     print(
         f"Fetched {summary.fetched} pages, cached {summary.cached}, "
-        f"companies without website {summary.no_website}"
+        f"excluded {summary.excluded}, companies without website {summary.no_website}"
     )
     for url, error in summary.failed:
         print(f"Failed {url}: {error}")
@@ -80,6 +98,7 @@ def main() -> None:
     subcommands.add_parser("status", help="show config and database status")
     import_parser = subcommands.add_parser("import", help="import seed companies from a CSV file")
     import_parser.add_argument("csv_path", type=Path, help="path to the CSV file")
+    subcommands.add_parser("filter", help="show which companies pass the hard exclusion gate")
     fetch_parser = subcommands.add_parser("fetch", help="fetch homepages and relevant subpages (cached)")
     fetch_parser.add_argument("--refresh", action="store_true", help="ignore the cache and fetch again")
     subcommands.add_parser("parse", help="extract text from fetched pages that changed")
@@ -89,6 +108,8 @@ def main() -> None:
         exit_code = show_status()
     elif args.command == "import":
         exit_code = run_import(args.csv_path)
+    elif args.command == "filter":
+        exit_code = run_filter()
     elif args.command == "fetch":
         exit_code = run_fetch(args.refresh)
     else:

@@ -6,6 +6,7 @@ from autoscore.database import save_company
 from autoscore.enrichment import fetch_company_pages, parse_pages
 from autoscore.fetcher import Fetcher
 from autoscore.models import Company
+from autoscore.config import EXAMPLE_CONFIG_PATH, load_config
 
 HOME_HTML = """<html><head><title>Example AI</title></head><body>
 <a href="/pricing">Pricing</a> <a href="/careers">Careers</a>
@@ -87,3 +88,23 @@ def test_parse_pages_stores_text_and_skips_unchanged(connection: sqlite3.Connect
         ("https://exampleai.com",),
     ).fetchone()[0]
     assert "Lead enrichment for B2B teams." in homepage_text
+
+def test_excluded_companies_are_not_fetched(connection: sqlite3.Connection) -> None:
+    company = Company.model_validate(
+        {
+            "name": "Berlin AI",
+            "website": "berlinai.example",
+            "hq_country": {
+                "value": "DE",
+                "provenance": {"source_type": "user_csv", "method": "csv_import", "confidence": 0.8},
+            },
+        }
+    )
+    save_company(connection, company)
+    calls: list[str] = []
+
+    with fake_site(calls) as fetcher:
+        summary = fetch_company_pages(connection, fetcher, config=load_config(EXAMPLE_CONFIG_PATH))
+
+    assert summary.excluded == 1
+    assert calls == []  # not a single request, not even robots.txt

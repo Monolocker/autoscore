@@ -8,10 +8,12 @@ import logging
 import sqlite3
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
+from typing import Any
 
 from autoscore.database import get_page, list_companies, list_html_pages, save_page, save_page_text
 from autoscore.discovery import MAX_SUBPAGES, select_subpages, site_host
 from autoscore.fetcher import Fetcher
+from autoscore.filters import check_exclusions
 from autoscore.models import utc_now
 from autoscore.parsing import PARSER_VERSION, looks_js_rendered, parse_html
 
@@ -25,6 +27,7 @@ ERROR_CACHE = timedelta(days=1)
 class FetchSummary:
     fetched: int = 0
     cached: int = 0
+    excluded: int = 0
     no_website: int = 0
     failed: list[tuple[str, str]] = field(default_factory=list)  # (url, error)
 
@@ -69,11 +72,21 @@ def fetch_company_pages(
     fetcher: Fetcher,
     refresh: bool = False,
     max_subpages: int = MAX_SUBPAGES,
+    config: dict[str, Any] | None = None,
 ) -> FetchSummary:
-    """Fetch each homepage, then the relevant subpages it links to."""
+    """Fetch each homepage, then the relevant subpages it links to.
+
+    When a config is given, companies failing the hard exclusion gate are skipped.
+    """
     summary = FetchSummary()
     now = utc_now()
     for company in list_companies(connection):
+        if config is not None:
+            exclusion = check_exclusions(company, config)
+            if exclusion.excluded:
+                summary.excluded += 1
+                logger.info("Skipping %s (excluded: %s)", company.name, "; ".join(exclusion.reasons))
+                continue
         if company.website is None:
             summary.no_website += 1
             continue
