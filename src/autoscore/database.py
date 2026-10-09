@@ -242,3 +242,17 @@ def save_page_text(
             """,
             (page_id, title, description, text, source_hash, utc_now().isoformat()),
         )
+
+
+def list_company_pages(connection: sqlite3.Connection, company_key: str) -> list[sqlite3.Row]:
+    """Parsed pages for one company: URL, HTML, and extracted text."""
+    return connection.execute(
+        """
+        SELECT pages.url, pages.final_url, pages.html, page_texts.text
+        FROM pages
+        JOIN page_texts ON page_texts.page_id = pages.id
+        WHERE pages.company_key = ? AND pages.html IS NOT NULL
+        ORDER BY pages.url
+        """,
+        (company_key,),
+    ).fetchall()

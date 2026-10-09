@@ -9,6 +9,7 @@ from pathlib import Path
 from autoscore.config import CONFIG_PATH, PROJECT_ROOT, load_config, total_weight
 from autoscore.database import DEFAULT_DB_PATH, connect, list_companies, list_tables
 from autoscore.enrichment import fetch_company_pages, parse_pages
+from autoscore.extraction import run_extraction
 from autoscore.fetcher import Fetcher
 from autoscore.filters import check_exclusions
 from autoscore.ingestion import import_csv
@@ -88,6 +89,19 @@ def run_parse() -> int:
     return 0
 
 
+def run_extract() -> int:
+    config = load_config()
+    with closing(connect()) as connection:
+        summary = run_extraction(connection, config)
+
+    counts = summary.counts
+    print(
+        f"Extracted signals for {summary.companies} companies (excluded {summary.excluded}): "
+        f"{counts['true']} true, {counts['false']} false, {counts['unknown']} unknown"
+    )
+    return 0
+
+
 def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(message)s")
     # httpx logs every request at INFO; our own "Fetching ..." lines are enough.
@@ -102,6 +116,7 @@ def main() -> None:
     fetch_parser = subcommands.add_parser("fetch", help="fetch homepages and relevant subpages (cached)")
     fetch_parser.add_argument("--refresh", action="store_true", help="ignore the cache and fetch again")
     subcommands.add_parser("parse", help="extract text from fetched pages that changed")
+    subcommands.add_parser("extract", help="extract deterministic signals from company data and pages")
     args = parser.parse_args()
 
     if args.command == "status":
@@ -112,6 +127,8 @@ def main() -> None:
         exit_code = run_filter()
     elif args.command == "fetch":
         exit_code = run_fetch(args.refresh)
-    else:
+    elif args.command == "parse":
         exit_code = run_parse()
+    else:
+        exit_code = run_extract()
     sys.exit(exit_code)
