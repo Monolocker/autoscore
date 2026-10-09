@@ -13,6 +13,7 @@ from autoscore.extraction import run_extraction
 from autoscore.fetcher import Fetcher
 from autoscore.filters import check_exclusions
 from autoscore.ingestion import import_csv
+from autoscore.scoring import format_explanation, load_latest_score, run_scoring
 
 
 def show_status() -> int:
@@ -102,6 +103,39 @@ def run_extract() -> int:
     return 0
 
 
+def run_score() -> int:
+    config = load_config()
+    with closing(connect()) as connection:
+        results = run_scoring(connection, config)
+
+    ranked = sorted((result for result, _ in results if not result.excluded), key=lambda r: r.total, reverse=True)
+    print(f"{'rank':<5}{'company':<28}{'total':>6}{'conf':>6}{'icp':>6}{'need':>6}{'urg':>6}{'sem':>6}  primary service")
+    for rank, result in enumerate(ranked, start=1):
+        points = {dimension.name: dimension.points for dimension in result.dimensions}
+        print(
+            f"{rank:<5}{result.company_key:<28}{result.total:>6.1f}{result.confidence:>6.2f}"
+            f"{points['icp_fit']:>6.1f}{points['service_need']:>6.1f}"
+            f"{points['urgency']:>6.1f}{points['semantic_fit']:>6.1f}  {result.primary_service or '-'}"
+        )
+    for result, _ in results:
+        if result.excluded:
+            print(f"EXCLUDED {result.company_key}: {'; '.join(result.exclusion_reasons)}")
+
+    stored = sum(1 for _, was_stored in results if was_stored)
+    print(f"Stored {stored} new score(s), {len(results) - stored} unchanged")
+    return 0
+
+
+def run_explain(company_key: str) -> int:
+    with closing(connect()) as connection:
+        result = load_latest_score(connection, company_key)
+    if result is None:
+        print(f"No score for {company_key}. Run: uv run autoscore score", file=sys.stderr)
+        return 1
+    print(format_explanation(result))
+    return 0
+
+
 def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(message)s")
     # httpx logs every request at INFO; our own "Fetching ..." lines are enough.
@@ -117,6 +151,9 @@ def main() -> None:
     fetch_parser.add_argument("--refresh", action="store_true", help="ignore the cache and fetch again")
     subcommands.add_parser("parse", help="extract text from fetched pages that changed")
     subcommands.add_parser("extract", help="extract deterministic signals from company data and pages")
+    subcommands.add_parser("score", help="score and rank every company")
+    explain_parser = subcommands.add_parser("explain", help="show the evidence behind a company's latest score")
+    explain_parser.add_argument("company_key", help="company key, e.g. clodo.ai")
     args = parser.parse_args()
 
     if args.command == "status":
@@ -129,6 +166,10 @@ def main() -> None:
         exit_code = run_fetch(args.refresh)
     elif args.command == "parse":
         exit_code = run_parse()
-    else:
+    elif args.command == "extract":
         exit_code = run_extract()
+    elif args.command == "score":
+        exit_code = run_score()
+    else:
+        exit_code = run_explain(args.company_key)
     sys.exit(exit_code)

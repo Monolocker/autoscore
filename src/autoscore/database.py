@@ -57,6 +57,17 @@ CREATE TABLE IF NOT EXISTS page_texts (
     source_hash  TEXT NOT NULL,   -- parse key: parser version + content_hash of the HTML parsed
     parsed_at    TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS scores (
+    id           INTEGER PRIMARY KEY,
+    company_key  TEXT NOT NULL REFERENCES companies (key) ON DELETE CASCADE,
+    total        REAL NOT NULL,
+    confidence   REAL NOT NULL,
+    excluded     INTEGER NOT NULL,  -- 0 or 1
+    fingerprint  TEXT NOT NULL,     -- hash of the result; an unchanged result is not stored again
+    result_json  TEXT NOT NULL,     -- full ScoreResult with every line item
+    scored_at    TEXT NOT NULL
+);
 """
 
 PROVENANCE_COLUMNS = ("source_type", "method", "source_url", "confidence", "observed_at")
@@ -256,3 +267,33 @@ def list_company_pages(connection: sqlite3.Connection, company_key: str) -> list
         """,
         (company_key,),
     ).fetchall()
+
+
+def latest_score_row(connection: sqlite3.Connection, company_key: str) -> sqlite3.Row | None:
+    return connection.execute(
+        "SELECT * FROM scores WHERE company_key = ? ORDER BY id DESC LIMIT 1", (company_key,)
+    ).fetchone()
+
+
+def save_score(
+    connection: sqlite3.Connection,
+    company_key: str,
+    total: float,
+    confidence: float,
+    excluded: bool,
+    fingerprint: str,
+    result_json: str,
+) -> bool:
+    """Append a score unless it matches the company's latest one. Returns True if stored."""
+    latest = latest_score_row(connection, company_key)
+    if latest is not None and latest["fingerprint"] == fingerprint:
+        return False
+    with connection:
+        connection.execute(
+            """
+            INSERT INTO scores (company_key, total, confidence, excluded, fingerprint, result_json, scored_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (company_key, total, confidence, int(excluded), fingerprint, result_json, utc_now().isoformat()),
+        )
+    return True
